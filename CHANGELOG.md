@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Ignore `SIGPIPE` on Unix and use `MSG_NOSIGNAL`/`SO_NOSIGPIPE` so peer-close during flush no longer kills the process.
+- Make `find_package(cpptcpduplex)` resolve libraries installed without `CMAKE_BUILD_TYPE` (NOCONFIG → Release/Debug mapping).
+
 ## [1.0.0] — 2026-09-26
 
 ### Added

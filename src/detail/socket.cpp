@@ -14,6 +14,7 @@
 #  include <errno.h>
 #  include <netdb.h>
 #  include <netinet/in.h>
+#  include <signal.h>
 #  include <sys/socket.h>
 #  include <sys/types.h>
 #  include <unistd.h>
@@ -30,7 +31,26 @@ void init_wsa() {
     throw Error("sockets", "WSAStartup failed", errc::io_error);
   }
 }
+#else
+std::once_flag g_unix_once;
+void init_unix_sockets() {
+  // Avoid process death when writing to a peer that already closed (EPIPE).
+  ::signal(SIGPIPE, SIG_IGN);
+}
 #endif
+
+#ifndef MSG_NOSIGNAL
+#  define MSG_NOSIGNAL 0
+#endif
+
+void configure_new_socket(socket_handle fd) {
+#if defined(__APPLE__)
+  int one = 1;
+  setsockopt(static_cast<int>(fd), SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#else
+  (void)fd;
+#endif
+}
 
 std::error_code last_socket_error() {
 #if defined(_WIN32)
@@ -97,6 +117,8 @@ std::string sockaddr_to_string(const sockaddr* sa, socklen_t len) {
 void ensure_sockets_initialized() {
 #if defined(_WIN32)
   std::call_once(g_wsa_once, init_wsa);
+#else
+  std::call_once(g_unix_once, init_unix_sockets);
 #endif
 }
 
@@ -197,6 +219,7 @@ std::unique_ptr<TcpSocket> TcpSocket::connect(const std::string& address,
     return nullptr;
   }
 
+  configure_new_socket(fd);
   auto sock = std::make_unique<TcpSocket>(fd);
   sock->clear_deadline();
   return sock;
@@ -229,7 +252,8 @@ std::error_code TcpSocket::write_all(std::span<const std::uint8_t> buf) {
     const int n = ::send(static_cast<SOCKET>(fd_), reinterpret_cast<const char*>(buf.data() + sent),
                          static_cast<int>(buf.size() - sent), 0);
 #else
-    const ssize_t n = ::send(static_cast<int>(fd_), buf.data() + sent, buf.size() - sent, 0);
+    const ssize_t n =
+        ::send(static_cast<int>(fd_), buf.data() + sent, buf.size() - sent, MSG_NOSIGNAL);
 #endif
     if (n <= 0) {
       return last_socket_error();
@@ -406,6 +430,7 @@ std::unique_ptr<TcpSocket> TcpListener::accept(std::error_code& ec) {
     ec = last_socket_error();
     return nullptr;
   }
+  configure_new_socket(static_cast<socket_handle>(s));
   return std::make_unique<TcpSocket>(s);
 #endif
 }
