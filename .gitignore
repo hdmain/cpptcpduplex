@@ -18,7 +18,6 @@ compile_commands.json
 .DS_Store
 tcpduplex-go-ref/
 third_party/*.zip
-tests/interop/go_harness/go.sum
 *.log
 
 # Slim vendored mbedtls (keep sources needed to build)
