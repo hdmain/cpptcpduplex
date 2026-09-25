@@ -1,0 +1,176 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }} (${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+            cmake_extra: ""
+          - os: ubuntu-latest
+            compiler: clang
+            cmake_extra: "-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++"
+          - os: macos-latest
+            compiler: apple-clang
+            cmake_extra: ""
+          - os: windows-latest
+            compiler: msvc
+            cmake_extra: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build \
+            -DCPPTCPDUPLEX_BUILD_SHARED=OFF \
+            -DCPPTCPDUPLEX_BUILD_TESTS=ON \
+            -DCPPTCPDUPLEX_BUILD_EXAMPLES=ON \
+            -DCPPTCPDUPLEX_ENABLE_INSTALL=ON \
+            ${{ matrix.cmake_extra }}
+
+      - name: Build
+        run: cmake --build build --config Release -j 2
+
+      - name: Test
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            ctest --test-dir build -C Release --output-on-failure
+          else
+            ctest --test-dir build --output-on-failure
+          fi
+
+      - name: Install (prefix)
+        shell: bash
+        run: |
+          cmake --install build --prefix "${{ github.workspace }}/install-prefix" --config Release
+
+      - name: find_package smoke test
+        shell: bash
+        run: |
+          PREFIX="${{ github.workspace }}/install-prefix"
+          SMOKE="${{ github.workspace }}/find_pkg_smoke"
+          mkdir -p "$SMOKE"
+          cat > "$SMOKE/main.cpp" <<'EOF'
+          #include <cpptcpduplex/errors.hpp>
+          int main() {
+            return cpptcpduplex::make_error_code(cpptcpduplex::errc::ok) ? 1 : 0;
+          }
+          EOF
+          cat > "$SMOKE/CMakeLists.txt" <<'EOF'
+          cmake_minimum_required(VERSION 3.20)
+          project(find_pkg_test LANGUAGES CXX)
+          set(CMAKE_CXX_STANDARD 20)
+          find_package(cpptcpduplex ${CPPTCPDUPLEX_FIND_VERSION} REQUIRED CONFIG)
+          add_executable(find_pkg_test main.cpp)
+          target_link_libraries(find_pkg_test PRIVATE cpptcpduplex::cpptcpduplex)
+          EOF
+          cmake -S "$SMOKE" -B "$SMOKE/build" \
+            -DCPPTCPDUPLEX_FIND_VERSION=1.0 \
+            -DCMAKE_PREFIX_PATH="$PREFIX" \
+            -Dcpptcpduplex_DIR="$PREFIX/lib/cmake/cpptcpduplex"
+          # Some distros use lib64
+          if [[ ! -d "$PREFIX/lib/cmake/cpptcpduplex" && -d "$PREFIX/lib64/cmake/cpptcpduplex" ]]; then
+            cmake -S "$SMOKE" -B "$SMOKE/build" \
+              -DCMAKE_PREFIX_PATH="$PREFIX" \
+              -Dcpptcpduplex_DIR="$PREFIX/lib64/cmake/cpptcpduplex"
+          fi
+          cmake --build "$SMOKE/build" --config Release
+
+  sanitizers:
+    name: ASan+UBSan (Linux Clang)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure with sanitizers
+        run: |
+          cmake -S . -B build-san \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCPPTCPDUPLEX_BUILD_SHARED=OFF \
+            -DCPPTCPDUPLEX_BUILD_TESTS=ON \
+            -DCPPTCPDUPLEX_BUILD_EXAMPLES=OFF \
+            -DCPPTCPDUPLEX_ENABLE_ASAN=ON \
+            -DCPPTCPDUPLEX_ENABLE_UBSAN=ON \
+            -DCPPTCPDUPLEX_ENABLE_INSTALL=OFF
+
+      - name: Build
+        run: cmake --build build-san -j 2
+
+      - name: Test under sanitizers
+        run: |
+          export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1
+          export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+          ctest --test-dir build-san --output-on-failure
+
+  fuzz:
+    name: libFuzzer (protocol + transfer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure fuzzers
+        run: |
+          cmake -S . -B build-fuzz \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCPPTCPDUPLEX_BUILD_SHARED=OFF \
+            -DCPPTCPDUPLEX_BUILD_TESTS=OFF \
+            -DCPPTCPDUPLEX_BUILD_EXAMPLES=OFF \
+            -DCPPTCPDUPLEX_BUILD_FUZZERS=ON \
+            -DCPPTCPDUPLEX_ENABLE_INSTALL=OFF
+
+      - name: Build fuzzers
+        run: cmake --build build-fuzz -j 2
+
+      - name: Seed corpus
+        run: |
+          mkdir -p corpus/protocol corpus/transfer
+          printf 'TDX1\x00\x01' > corpus/protocol/handshake_magic.bin
+          printf '\xff\xff\xff\xff' > corpus/protocol/huge_len.bin
+          printf 'TFX1\x01' > corpus/transfer/magic.bin
+
+      - name: Fuzz protocol (60s)
+        run: ./build-fuzz/fuzz_protocol -max_total_time=60 -timeout=5 corpus/protocol
+
+      - name: Fuzz transfer frames (60s)
+        run: ./build-fuzz/fuzz_transfer_frame -max_total_time=60 -timeout=5 corpus/transfer
+
+  interop:
+    name: Go ↔ C++ interop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build C++ echo binaries
+        run: |
+          cmake -S . -B build \
+            -DCPPTCPDUPLEX_BUILD_EXAMPLES=OFF \
+            -DCPPTCPDUPLEX_BUILD_TESTS=ON \
+            -DCPPTCPDUPLEX_ENABLE_INSTALL=OFF
+          cmake --build build --target cpp_echo_server cpp_echo_client -j 2
+
+      - name: Run interop harness
+        working-directory: tests/interop/go_harness
+        run: go run . ../../../build

@@ -1,0 +1,9 @@
+{
+  "name": "cpptcpduplex",
+  "version-string": "1.0.0",
+  "description": "Native C++20 encrypted full-duplex TCP messaging (X25519 + AES-256-GCM), wire-compatible with Go tcpduplex",
+  "homepage": "https://github.com/hdmain/cpptcpduplex",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "supports": "!uwp",
+  "dependencies": []
+}

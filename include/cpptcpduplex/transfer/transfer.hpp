@@ -87,6 +87,10 @@ std::error_code receive(Conn& conn, WriterAt& w, std::int64_t resume_offset, Met
 std::error_code receive_file(Conn& conn, const std::string& dest_path, Meta& out_meta,
                              const Options* opts);
 
+// Parses a TFX1 transfer frame. Returns errc::bad_frame on malformed input.
+// Intended for tests and fuzzers; production code uses Send/Receive.
+std::error_code validate_frame(std::span<const std::uint8_t> bytes);
+
 }  // namespace cpptcpduplex::transfer
 
 namespace std {

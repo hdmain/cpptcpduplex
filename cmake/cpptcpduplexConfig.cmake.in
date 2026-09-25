@@ -1,0 +1,31 @@
+@PACKAGE_INIT@
+
+set(_CPPTCPDUPLEX_SHARED @CPPTCPDUPLEX_BUILD_SHARED@)
+
+include("${CMAKE_CURRENT_LIST_DIR}/cpptcpduplexTargets.cmake")
+
+# Static consumers need mbedcrypto symbols; shared builds already contain them.
+if(NOT _CPPTCPDUPLEX_SHARED)
+  if(NOT TARGET cpptcpduplex::mbedcrypto)
+    set(_cpptcpduplex_mbedcrypto_names mbedcrypto libmbedcrypto)
+    find_library(CPPTCPDUPLEX_MBEDCRYPTO_LIBRARY
+      NAMES ${_cpptcpduplex_mbedcrypto_names}
+      PATHS
+        "${PACKAGE_PREFIX_DIR}/lib"
+        "${PACKAGE_PREFIX_DIR}/lib64"
+        "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@"
+      NO_DEFAULT_PATH
+      REQUIRED
+    )
+    add_library(cpptcpduplex::mbedcrypto STATIC IMPORTED)
+    set_target_properties(cpptcpduplex::mbedcrypto PROPERTIES
+      IMPORTED_LOCATION "${CPPTCPDUPLEX_MBEDCRYPTO_LIBRARY}"
+      INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@"
+    )
+    unset(_cpptcpduplex_mbedcrypto_names)
+  endif()
+  set_property(TARGET cpptcpduplex::cpptcpduplex APPEND PROPERTY
+    INTERFACE_LINK_LIBRARIES cpptcpduplex::mbedcrypto)
+endif()
+
+check_required_components(cpptcpduplex)

@@ -949,4 +949,9 @@ std::error_code receive_file(Conn& conn, const std::string& dest_path, Meta& out
   return {};
 }
 
+std::error_code validate_frame(std::span<const std::uint8_t> bytes) {
+  Decoded d;
+  return decode_frame(bytes, d);
+}
+
 }  // namespace cpptcpduplex::transfer

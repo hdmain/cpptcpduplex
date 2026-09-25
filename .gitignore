@@ -1,5 +1,10 @@
 /build/
 /build-shared/
+/build-pkg/
+/build-san/
+/build-fuzz/
+/install-prefix/
+/find_pkg_smoke/
 /out/
 /cmake-build-*/
 /.vs/
