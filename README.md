@@ -9,12 +9,18 @@
 
 Native **C++20** port of [tcpduplex](https://github.com/hdmain/tcpduplex): encrypted full-duplex messaging over TCP using **X25519 ECDH**, **AES-256-GCM**, length-prefixed records, and concurrent read/write loops.
 
-Wire-compatible with the Go library:
-
-- Go `tcpduplex` ↔ C++ `cpptcpduplex`
-- C++ `cpptcpduplex` ↔ Go `tcpduplex`
-
 This is **not** TLS and does **not** replace certificate-based authentication for the public internet.
+
+## Other languages
+
+Wire-compatible ports of the same protocol:
+
+| Language | Repository |
+|----------|------------|
+| Go | [tcpduplex](https://github.com/hdmain/tcpduplex) |
+| Kotlin / Android | [tcpduplexkt](https://github.com/hdmain/tcpduplexkt) |
+| C++20 (this repo) | [cpptcpduplex](https://github.com/hdmain/cpptcpduplex) |
+| Rust | [rutcpduplex](https://github.com/hdmain/rutcpduplex) |
 
 ## Versioning
 
